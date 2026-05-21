@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Monitor Peso ESP32</title>
+
+    <style>
+        body {
+            font-family: Arial;
+            margin: 20px;
+            background: #f0f2f5
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: auto;
+        }
+
+        canvas {
+            border: 1px solid #ccc;
+            width: 100%;
+            background: white;
+        }
+
+        .dashboard {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .card {
+            flex: 1;
+            background: white;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .controls {
+            margin-bottom: 15px;
+            background: white;
+            padding: 10px;
+            border-radius: 6px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        input {
+            padding: 6px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        button {
+            padding: 6px 12px;
+            background: #007bff;
+            border: none;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .status {
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+
+        <h2>Monitor Peso ESP32</h2>
+
+        <div class="controls">
+
+            <label>IP ESP32:</label>
+
+            <input id="ip" value="192.168.0.100">
+
+            <button onclick="connect()">Conectar</button>
+
+            <span id="status" class="status" style="color:red">
+                ● Desconectado
+            </span>
+
+        </div>
+
+        <div class="dashboard">
+
+            <div class="card">
+                Tempo<br><b id="tempo">0</b>s
+            </div>
+
+            <div class="card">
+                Peso<br><b id="peso">0</b>kg
+            </div>
+
+            <div class="card">
+                ADC<br><b id="adc_avg">0</b>
+            </div>
+
+            <div class="card">
+                Vadc<br><b id="vadc">0</b>V
+            </div>
+
+        </div>
+
+        <canvas id="chart" width="900" height="350"></canvas>
+
+    </div>
+
+    <script>
+
+        let ws
+
+        const MAX_POINTS = 500
+
+        const data = new Array(MAX_POINTS)
+
+        let index = 0
+        let count = 0
+
+        function connect() {
+
+            if (ws) ws.close()
+
+            let ip = document.getElementById("ip").value
+
+            ws = new WebSocket("ws://" + ip + ":8080")
+
+            ws.onopen = () => {
+
+                status.innerText = "● Conectado"
+                status.style.color = "green"
+
+            }
+
+            ws.onclose = () => {
+
+                status.innerText = "● Desconectado"
+                status.style.color = "red"
+
+            }
+
+            ws.onmessage = (msg) => {
+
+                const d = JSON.parse(msg.data)
+
+                tempo.innerText = d.t
+                peso.innerText = d.p
+                adc_avg.innerText = d.a
+                vadc.innerText = d.va
+
+                data[index] = { t: d.t, p: d.p }
+
+                index = (index + 1) % MAX_POINTS
+
+                if (count < MAX_POINTS) count++
+
+            }
+
+        }
+
+        const canvas = document.getElementById("chart")
+        const ctx = canvas.getContext("2d")
+
+        function draw() {
+
+            const w = canvas.width
+            const h = canvas.height
+            const pad = 50
+
+            ctx.clearRect(0, 0, w, h)
+
+            const chartW = w - 2 * pad
+            const chartH = h - 2 * pad
+
+            const yMax = 20
+
+            ctx.strokeStyle = "#888"
+
+            ctx.beginPath()
+            ctx.moveTo(pad, h - pad)
+            ctx.lineTo(w - pad, h - pad)
+            ctx.stroke()
+
+            ctx.beginPath()
+            ctx.moveTo(pad, pad)
+            ctx.lineTo(pad, h - pad)
+            ctx.stroke()
+
+            ctx.fillStyle = "#444"
+            ctx.font = "12px Arial"
+
+            ctx.fillText("Tempo (amostras)", w - 120, h - pad + 20)
+
+            ctx.save()
+            ctx.translate(15, h / 2)
+            ctx.rotate(-Math.PI / 2)
+            ctx.fillText("Peso (kg)", 0, 0)
+            ctx.restore()
+
+            if (count > 1) {
+
+                ctx.strokeStyle = "#007bff"
+                ctx.lineWidth = 2
+                ctx.beginPath()
+
+                let first = true
+                let start = (index - count + MAX_POINTS) % MAX_POINTS
+
+                for (let i = 0; i < count; i++) {
+
+                    let p = data[(start + i) % MAX_POINTS]
+
+                    if (!p) continue
+
+                    let x = pad + (i / count) * chartW
+                    let y = h - pad - (p.p / yMax) * chartH
+
+                    if (first) {
+                        ctx.moveTo(x, y)
+                        first = false
+                    }
+                    else {
+                        ctx.lineTo(x, y)
+                    }
+
+                }
+
+                ctx.stroke()
+
+            }
+
+            requestAnimationFrame(draw)
+
+        }
+
+        draw()
+
+    </script>
+
+</body>
+
+</html>
